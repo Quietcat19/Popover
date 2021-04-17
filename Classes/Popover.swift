@@ -25,6 +25,7 @@ public enum PopoverOption {
   case initialSpringVelocity(CGFloat)
   case sideOffset(CGFloat)
   case borderColor(UIColor)
+    case marginTop(CGFloat)
 }
 
 @objc public enum PopoverType: Int {
@@ -56,6 +57,7 @@ open class Popover: UIView {
   open var initialSpringVelocity: CGFloat = 3
   open var sideOffset: CGFloat = 6.0
   open var borderColor: UIColor?
+    open var marginTop: CGFloat = 0.0
 
   // custom closure
   open var willShowHandler: (() -> ())?
@@ -147,7 +149,7 @@ open class Popover: UIView {
       point = inView.convert(
         CGPoint(
           x: fromView.frame.origin.x + (fromView.frame.size.width / 2),
-          y: fromView.frame.origin.y + fromView.frame.size.height
+          y: fromView.frame.origin.y + fromView.frame.size.height + marginTop
       ), from: fromView.superview)
     case .left:
       point = inView.convert(
@@ -538,6 +540,8 @@ private extension Popover {
           self.sideOffset = value
         case let .borderColor(value):
           self.borderColor = value
+        case let .marginTop(value):
+            self.marginTop = value
         }
       }
     }

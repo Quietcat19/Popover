@@ -108,14 +108,14 @@ open class Popover: UIView {
         guard let rootView = UIApplication.shared.keyWindow else {
             return
         }
-        self.showAsDialog(contentView, inView: rootView)
+        self.showAsDialog(contentView, containerView: rootView)
     }
 
-    open func showAsDialog(_ contentView: UIView, inView: UIView) {
+    open func showAsDialog(_ contentView: UIView, containerView: UIView) {
         self.arrowSize = .zero
-        let point = CGPoint(x: inView.center.x,
-                            y: inView.center.y - contentView.frame.height / 2)
-        self.show(contentView, point: point, inView: inView)
+        let point = CGPoint(x: containerView.center.x,
+                            y: containerView.center.y - contentView.frame.height / 2)
+        self.show(contentView, point: point, containerView: containerView)
     }
 
     /*
@@ -126,47 +126,47 @@ open class Popover: UIView {
         guard let rootView = UIApplication.shared.keyWindow else {
             return
         }
-        self.show(contentView, fromView: fromView, inView: rootView)
+        self.show(contentView, fromView: fromView, containerView: rootView)
     }
 
-    open func show(_ contentView: UIView, fromView: UIView, inView: UIView) {
+    open func show(_ contentView: UIView, fromView: UIView, containerView: UIView) {
         let point: CGPoint
         // 自动切换上下模式
         // TODO: add left/right auto
         if self.popoverType == .auto {
             if let point = fromView.superview?.convert(fromView.frame.origin, to: nil),
-               point.y + fromView.frame.height + self.arrowSize.height + contentView.frame.height > inView.frame.height
+               point.y + fromView.frame.height + self.arrowSize.height + contentView.frame.height > containerView.frame.height
             {
                 self.popoverType = .up
             } else {
                 self.popoverType = .down
             }
         }
-        // 将fromView的坐标转换为inView的坐标
+        // 将fromView的坐标转换为containerView的坐标
         switch self.popoverType {
         case .up:
-            point = inView.convert(
+            point = containerView.convert(
                 CGPoint(x: fromView.frame.origin.x + (fromView.frame.size.width / 2), y: fromView.frame.origin.y),
                 from: fromView.superview)
         case .down, .auto:
-            point = inView.convert(
+            point = containerView.convert(
                 CGPoint(x: fromView.frame.origin.x + (fromView.frame.size.width / 2), y: fromView.frame.origin.y + fromView.frame.size.height + marginTop),
                 from: fromView.superview)
         case .left:
-            point = inView.convert(
+            point = containerView.convert(
                 CGPoint(x: fromView.frame.origin.x - sideOffset, y: fromView.frame.origin.y + 0.5 * fromView.frame.height),
                 from: fromView.superview)
         case .right:
-            point = inView.convert(
+            point = containerView.convert(
                 CGPoint(x: fromView.frame.origin.x + fromView.frame.size.width + sideOffset, y: fromView.frame.origin.y + 0.5 * fromView.frame.height),
                 from: fromView.superview)
         }
 
         if self.highlightFromView {
-            self.createHighlightLayer(fromView: fromView, inView: inView)
+            self.createHighlightLayer(fromView: fromView, containerView: containerView)
         }
         // 调用根据坐标显示自定义视图
-        self.show(contentView, point: point, inView: inView)
+        self.show(contentView, point: point, containerView: containerView)
     }
 
     /*
@@ -177,15 +177,33 @@ open class Popover: UIView {
         guard let rootView = UIApplication.shared.keyWindow else {
             return
         }
-        self.show(contentView, point: point, inView: rootView)
+        self.show(contentView, point: point, containerView: rootView)
     }
 
-    open func show(_ contentView: UIView, point: CGPoint, inView: UIView) {
+    open func show(_ contentView: UIView, point: CGPoint, containerView: UIView) {
+        self.containerView = containerView
+        self.contentView = contentView
+        self.contentView.backgroundColor = UIColor.clear
+        self.contentView.layer.cornerRadius = self.cornerRadius
+        self.contentView.layer.masksToBounds = true
+        self.arrowShowPoint = point
+        self.show()
+    }
+
+    override open func accessibilityPerformEscape() -> Bool {
+        self.dismiss()
+        return true
+    }
+    
+    /*
+     只在重复展示同一个弹窗时调用
+     */
+    open func showOnly() {
         // 背景遮罩
         if self.dismissOnBlackOverlayTap || self.showBlackOverlay {
             self.blackOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            self.blackOverlay.frame = inView.bounds
-            inView.addSubview(self.blackOverlay)
+            self.blackOverlay.frame = self.containerView.bounds
+            self.containerView.addSubview(self.blackOverlay)
 
             if showBlackOverlay {
                 if let overlayBlur = self.overlayBlur {
@@ -205,19 +223,34 @@ open class Popover: UIView {
                 self.blackOverlay.addTarget(self, action: #selector(Popover.dismiss), for: .touchUpInside)
             }
         }
-
-        self.containerView = inView
-        self.contentView = contentView
-        self.contentView.backgroundColor = UIColor.clear
-        self.contentView.layer.cornerRadius = self.cornerRadius
-        self.contentView.layer.masksToBounds = true
-        self.arrowShowPoint = point
-        self.show()
-    }
-
-    override open func accessibilityPerformEscape() -> Bool {
-        self.dismiss()
-        return true
+        
+        // 将自定义视图放入自身自视图，并把自身放入要显示层视图
+        self.addSubview(self.contentView)
+        self.containerView.addSubview(self)
+        // 动画效果
+        self.transform = CGAffineTransform(scaleX: 0.0, y: 0.0)
+        // 动画开始回调
+        self.willShowHandler?()
+        // 动画
+        UIView.animate(
+            withDuration: self.animationIn,
+            delay: 0,
+            usingSpringWithDamping: self.springDamping,
+            initialSpringVelocity: self.initialSpringVelocity,
+            options: UIView.AnimationOptions(),
+            animations: {
+                self.transform = CGAffineTransform.identity
+            }) { _ in
+            // 动画结束回调
+            self.didShowHandler?()
+        }
+        UIView.animate(
+            withDuration: self.animationIn / 3,
+            delay: 0,
+            options: .curveLinear,
+            animations: {
+                self.blackOverlay.alpha = 1
+            }, completion: nil)
     }
 
     open func dismiss() {
@@ -561,13 +594,13 @@ private extension Popover {
             frame.origin.y = self.arrowShowPoint.y - frame.height - self.arrowSize.height
             anchorPoint = CGPoint(x: arrowPoint.x / frame.size.width, y: 1)
         case .down, .auto:
-            frame.origin.y = self.arrowShowPoint.y + self.arrowSize.height
+            frame.origin.y = self.arrowShowPoint.y
             anchorPoint = CGPoint(x: arrowPoint.x / frame.size.width, y: 0)
         case .left:
             frame.origin.x = self.arrowShowPoint.x - frame.size.width - self.arrowSize.height
             anchorPoint = CGPoint(x: 1, y: 0.5)
         case .right:
-            frame.origin.x = self.arrowShowPoint.x + self.arrowSize.width
+            frame.origin.x = self.arrowShowPoint.x
             anchorPoint = CGPoint(x: 0, y: 0.5)
         }
 
@@ -581,26 +614,19 @@ private extension Popover {
         let y = self.layer.position.y + (anchorPoint.y - lastAnchor.y) * self.layer.bounds.size.height
         self.layer.position = CGPoint(x: x, y: y)
 
-//        switch self.popoverType {
-//        case .up, .down, .auto:
-//            frame.size.height += self.arrowSize.height
-//        case .left, .right:
-//            frame.size.width += self.arrowSize.height
-//        }
-//
-//        self.frame = frame
-        
         switch self.popoverType {
         case .up, .down, .auto:
-            self.frame.size.height += self.arrowSize.height
+            frame.size.height += self.arrowSize.height
         case .left, .right:
-            self.frame.size.width += self.arrowSize.height
+            frame.size.width += self.arrowSize.height
         }
+
+        self.frame = frame
     }
 
-    func createHighlightLayer(fromView: UIView, inView: UIView) {
-        let path = UIBezierPath(rect: inView.bounds)
-        let highlightRect = inView.convert(fromView.frame, from: fromView.superview)
+    func createHighlightLayer(fromView: UIView, containerView: UIView) {
+        let path = UIBezierPath(rect: containerView.bounds)
+        let highlightRect = containerView.convert(fromView.frame, from: fromView.superview)
         let highlightPath = UIBezierPath(roundedRect: highlightRect, cornerRadius: self.highlightCornerRadius)
         path.append(highlightPath)
         path.usesEvenOddFillRule = true
@@ -622,37 +648,12 @@ private extension Popover {
         case .left, .right:
             self.contentView.frame.origin.x = 0
         }
-        // 将自定义视图放入自身自视图，并把自身放入要显示层视图
-        self.addSubview(self.contentView)
-        self.containerView.addSubview(self)
         // 设置大小
         self.create()
-        // 动画效果
-        self.transform = CGAffineTransform(scaleX: 0.0, y: 0.0)
-        // 动画开始回调
-        self.willShowHandler?()
-        // 动画
-        UIView.animate(
-            withDuration: self.animationIn,
-            delay: 0,
-            usingSpringWithDamping: self.springDamping,
-            initialSpringVelocity: self.initialSpringVelocity,
-            options: UIView.AnimationOptions(),
-            animations: {
-                self.transform = CGAffineTransform.identity
-            }) { _ in
-            // 动画结束回调
-            self.didShowHandler?()
-        }
-        UIView.animate(
-            withDuration: self.animationIn / 3,
-            delay: 0,
-            options: .curveLinear,
-            animations: {
-                self.blackOverlay.alpha = 1
-            }, completion: nil)
+        
+        showOnly()
     }
-
+    
     var isCloseToCornerLeftArrow: Bool {
         return self.arrowShowPoint.x < self.frame.origin.x + arrowSize.width / 2 + cornerRadius
     }
